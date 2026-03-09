@@ -1,0 +1,4 @@
+/cardgame/docs/
+/cardgame/target/
+*.py
+*.tpl

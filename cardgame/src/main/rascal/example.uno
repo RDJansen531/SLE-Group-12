@@ -65,8 +65,6 @@ game
 
   player alice
   player bob
-  player carol
-  player dave
 
 
   deck
@@ -93,9 +91,4 @@ game
   turn alice
 
 
-  play alice red 5
-  draw bob red Q
-  play carol yellow 5
-  pass dave
-  declare alice uno
-  challenge bob alice uno
+

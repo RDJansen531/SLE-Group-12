@@ -5,6 +5,10 @@ extend lang::std::Id;
 
 lexical Integer = [0-9]+ !>> [0-9];
 
+// TypeId must start with a lowercase letter, preventing conflicts with
+// uppercase rank keywords (A, J, Q, K) in the Card/DeckItem grammars.
+lexical TypeId = [a-z][A-Za-z0-9_]* !>> [A-Za-z0-9_];
+
 // ---------------------------------------------------------------------------
 // Concrete syntax
 // ---------------------------------------------------------------------------
@@ -28,10 +32,10 @@ syntax DeckSize
   = deckSize: "deck_size" Integer size;
 
 syntax RankPoints
-  = rankPoints: "rank_points" ":" RankPointValue+ values;
+  = rankPoints: "rank_points" ":" RankPointValue+ vals;
 
 syntax RankPointValue
-  = rankValue: Rank rank "=" Integer points;
+  = rankValue: Rank rank "=" Integer val;
 
 syntax Player
   = playerWithHand: "player" Id name "{" Hand hand "}"
@@ -48,16 +52,14 @@ syntax SuitName
   | custom: Id name;
 
 syntax DeckItem
-  = singleCard: Card card
-  | standardRange: Multiplier? mult SuitName suit RankRange range
-  | customCard: Multiplier? mult SuitName suit Id cardType
-  | wildCard: Multiplier? mult Id cardType;
+  = standardRange: Multiplier? mult SuitName suit RankRange range
+  > mixedCard: Multiplier? mult SuitName suit TypeId? typeIds;
 
 syntax Multiplier
   = mult: Integer count "x";
 
 syntax RankRange
-  = numericRange: Integer start "-" Integer end
+  = numericRange: Integer startRank "-" Integer endRank
   | singleRank: Rank rank;
 
 syntax Setup
@@ -67,7 +69,7 @@ syntax SetupAction
   = dealToEach: "each_player" "draws" Integer count
   | dealToPlayer: "player" Id name "draws" Integer count
   | discardTopCard: "discard" "top_card" "from" "deck"
-  | setState: Id variable "=" Id value;
+  | initState: Id variable "=" Id val;
 
 syntax Turn
   = turn: "turn" Id player;
@@ -76,7 +78,7 @@ syntax CardType
   = cardType: "card_type" Id name "points" Integer points ":" Effect+ effects;
 
 syntax StateVar
-  = stateVar: Id name "=" Id value;
+  = stateVar: Id name "=" Id val;
 
 syntax Violation
   = violation: "violation" Id name ":" Condition+ conditions "penalty" ":" Effect+ penalties;
@@ -107,7 +109,7 @@ syntax PlayerEffect
   | addHandValue: "add_hand_value";
 
 syntax StateChange
-  = setState: Id variable "=" Id value
+  = setState: "set" Id variable "=" Id val
   | reverseTurnOrder: "reverse" "turn_order"
   | startNewRound: "start_new_round";
 
@@ -137,10 +139,10 @@ syntax Condition
   | playerHandSizeEq: "player" Id name "hand_size" "equals" Integer limit
   | playerDeclared: "player" Id name "declared" Id declaration
   | anyPlayerHasHandSize: "any_player" "hand_size" "equals" Integer limit
-  | and: Condition lhs "and" Condition rhs
-  | or: Condition lhs "or" Condition rhs
-  | not: "not" Condition cond
-  | parens: "(" Condition cond ")";
+  | parens: "(" Condition cond ")"
+  > not: "not" Condition cond
+  > left and: Condition lhs "and" Condition rhs
+  > left or: Condition lhs "or" Condition rhs;
 
 syntax CardProperty 
   = suit: "suit" 
@@ -163,8 +165,7 @@ syntax Action
 
 syntax Card
   = standard: SuitName suit Rank rank
-  | custom: SuitName suit Id cardType
-  | wild: Id cardType;
+  > mixed: SuitName suit TypeId? typeIds;
 
 syntax Suit
   = hearts:   "hearts"
@@ -174,15 +175,7 @@ syntax Suit
 
 syntax Rank
   = ace:   "A"
-  | two:   "2"
-  | three: "3"
-  | four:  "4"
-  | five:  "5"
-  | six:   "6"
-  | seven: "7"
-  | eight: "8"
-  | nine:  "9"
-  | ten:   "10"
+  | numeral: Integer
   | jack:  "J"
   | queen: "Q"
   | king:  "K";
