@@ -1,0 +1,19 @@
+game
+
+  deck_size 20
+
+  game_ends_when :
+    any_player hand_size equals 0
+
+  setup :
+    each_player draws 5
+    discard top_card from deck
+
+  player alice
+  player bob
+
+  deck
+    hearts 1-10
+    hearts 1-10
+
+  turn alice

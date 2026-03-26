@@ -1,0 +1,60 @@
+game
+
+  deck_size 52
+
+  rank_points :
+    1 = 1
+    2 = 2
+    3 = 3
+    4 = 4
+    5 = 5
+    6 = 6
+    7 = 7
+    8 = 50
+    9 = 9
+    10 = 10
+    11 = 10
+    12 = 10
+    13 = 10
+
+  card_type eight points 50 :
+    current_player: chooses suit
+
+  current_color = hearts
+
+  rule for play :
+    (player is current_turn and (card matches suit of top_discard or card matches rank of top_discard))
+
+  rule for draw :
+    player is current_turn
+
+  round_ends_when :
+    hand_size equals 0
+  then :
+    all_players: add_hand_value
+
+  game_ends_when :
+    any_player hand_size equals 0
+
+  setup :
+    each_player draws 7
+    discard top_card from deck
+
+  player alice
+  player bob
+
+  deck
+    hearts 1-7
+    hearts 9-13
+    hearts eight
+    diamonds 1-7
+    diamonds 9-13
+    diamonds eight
+    clubs 1-7
+    clubs 9-13
+    clubs eight
+    spades 1-7
+    spades 9-13
+    spades eight
+
+  turn alice

@@ -5,6 +5,7 @@ import ParseTree;
 import Set;
 import List;
 import IO;
+import String;
 
 /*
  * Parser for the Card Game DSL
@@ -21,9 +22,15 @@ public start[Game] parseGame(loc l) = disambiguate(parse(#start[Game], l, allowA
 start[Game] disambiguate(start[Game] t) {
     return visit(t) {
         case amb(set[Tree] alts) : {
+            println("Found ambiguity with <size(alts)> alternatives");
             if (isDeckItemListAmbiguity(alts)) {
                 println("Disambiguating DeckItem list...");
                 insert getShortestList(alts);
+            } else if (isSuitNameAmbiguity(alts)) {
+                println("Disambiguating SuitName...");
+                insert preferStandardSuit(alts);
+            } else {
+                println("Unknown ambiguity, leaving unresolved");
             }
         }
     };
@@ -60,4 +67,27 @@ Tree getShortestList(set[Tree] alts) {
         }
     }
     return best;
+}
+
+bool isSuitNameAmbiguity(set[Tree] alts) {
+    if (isEmpty(alts) || size(alts) != 2) return false;
+    
+    str allText = "<alts>";
+    
+    // Check if this is a SuitName ambiguity by looking for "standard" and "custom" labels
+    // within the context of SuitName sort
+    return contains(allText, "SuitName") && contains(allText, "standard") && contains(allText, "custom");
+}
+
+Tree preferStandardSuit(set[Tree] alts) {
+    // Return the alternative with "standard" label
+    for (alt <- alts) {
+        str s = "<alt>";
+        // Check for "standard" in the tree representation
+        if (contains(s, "standard") && !contains(s, "custom")) {
+            return alt;
+        }
+    }
+    // Fallback: return first alternative
+    return getOneFrom(alts);
 }
