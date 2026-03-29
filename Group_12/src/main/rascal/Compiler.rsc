@@ -195,16 +195,38 @@ str compileSuitName(SuitName sn) {
 str compilePlayerSetup(list[Player] players) {
   str s = "# --- Player Setup ---\n";
   s += "def setup_game():\n";
-  s += "    global deck, descriptor\n";
+  s += "    global deck, players, discard_pile\n";
   s += "    deck = create_deck()\n";
-  s += "    random.shuffle(deck)\n";
   
   for (p <- players) {
       str name = "";
-      if (player(n) := p) name = n;
-      if (playerWithHand(n, _) := p) name = n;
-      s += "    players.append({\"name\": \"<name>\", \"hand\": []})\n";
+      list[Card] handCards = [];
+      if (player(n) := p) {
+          name = n;
+      }
+      if (playerWithHand(n, hand(cards)) := p) {
+          name = n;
+          handCards = cards;
+      }
+
+      s += "    # Initialize player <name>\n";
+      s += "    player_<name>_hand = []\n";
+      if(handCards != []) {
+        for (c <- handCards) {
+            s += "    player_<name>_hand.append(<compileCard(c)>)\n";
+        }
+      }
+      s += "    players.append({\"name\": \"<name>\", \"hand\": player_<name>_hand})\n";
+
+      // Remove dealt cards from the main deck to avoid duplicates
+      if(handCards != []) {
+        s += "    for card in player_<name>_hand:\n";
+        s += "        if card in deck:\n";
+        s += "            deck.remove(card)\n";
+      }
   }
+  
+  s += "    random.shuffle(deck)\n";
   s += "\n";
   return s;
 }
@@ -295,6 +317,11 @@ str compileGameLoop(Game g) {
   s += "    global discard_pile, deck, players, state_vars, current_turn_index, pending_callout_player, pending_callout_by, required_declaration, callout_penalty_draws\n";
   s += "    setup_game()\n";
   
+  s += "    if not discard_pile and deck:\n";
+  s += "        discard_pile.append(deck.pop())\n";
+  s += "        if \'current_color\' not in state_vars:\n";
+  s += "             state_vars[\'current_color\'] = discard_pile[-1].get(\'suit\', \'red\')\n";
+
   // Setup Actions
   for (stup <- g.setup) {
     for (act <- stup.actions) {
