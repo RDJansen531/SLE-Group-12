@@ -18,7 +18,6 @@ public void compileAndSave(Game g, loc targetFile) {
 public str compile(Game g) {
   str py = "# Generated Python code for Card Game\n";
   py += "import random\n";
-  py += "import sys\n\n";
 
   // 1. Initial State
   py += compileGameState(g);
@@ -27,7 +26,7 @@ public str compile(Game g) {
   py += compileDeckCreation(g.deck);
 
   // 3. Player Setup
-  py += compilePlayerSetup(g.players);
+  py += compilePlayerSetup(g.players); 
 
   // 4. Analysis & Rules
   py += compileRulesAndHelpers(g);
@@ -39,7 +38,66 @@ public str compile(Game g) {
   return py;
 }
 
+bool hasObligationRule(Game g) {
+  for (r <- g.rules) {
+    if (obligationRule(_, _, _, _, _, _) := r) return true;
+  }
+  return false;
+}
+
+str getRequiredDeclaration(Game g) {
+  if (!hasObligationRule(g)) return "";
+  for (r <- g.rules) {
+    if (obligationRule(name, _, _, _, _, _) := r) return name;
+  }
+  return "";
+}
+
+int getCalloutPenaltyDraws(Game g) {
+  if (!hasObligationRule(g)) return 0;
+  for (r <- g.rules) {
+    if (obligationRule(_, _, _, _, _, onViolation) := r) {
+      for (e <- onViolation) {
+        if (playerAction(current(), draws(n)) := e) return n;
+      }
+    }
+  }
+  return 0;
+}
+
+str getCalloutTriggerExpr(Game g) {
+  if (!hasObligationRule(g)) return "False";
+  for (r <- g.rules) {
+    if (obligationRule(_, requirements, _, _, _, _) := r) {
+      return compileCalloutConditions(requirements);
+    }
+  }
+  return "False";
+}
+
+str compileCalloutConditions(list[Condition] conds) {
+  if (conds == []) return "False";
+  return intercalate(" and ", [compileCalloutCondition(c) | c <- conds]);
+}
+
+str compileCalloutCondition(Condition c) {
+  switch(c) {
+    case handSizeEq(limit): return "len(current_player[\'hand\']) == <limit>";
+    case handSizeLt(limit): return "<limit> \> len(current_player[\'hand\'])";
+    case handSizeLte(limit): return "<limit> \>= len(current_player[\'hand\'])";
+    case handSizeGt(limit): return "len(current_player[\'hand\']) \> <limit>";
+    case handSizeGte(limit): return "len(current_player[\'hand\']) \>= <limit>";
+    case and(lhs, rhs): return "(<compileCalloutCondition(lhs)> and <compileCalloutCondition(rhs)>)";
+    case or(lhs, rhs): return "(<compileCalloutCondition(lhs)> or <compileCalloutCondition(rhs)>)";
+    case not(cond): return "(not <compileCalloutCondition(cond)>)";
+    case parens(cond): return "(<compileCalloutCondition(cond)>)";
+    default: return "False";
+  }
+}
+
 str compileGameState(Game g) {
+  int calloutPenaltyDraws = getCalloutPenaltyDraws(g);
+  str requiredDeclaration = getRequiredDeclaration(g);
   str s = "# --- Game State ---\n";
   s += "state_vars = {\n";
   for (sv <- g.stateVars) {
@@ -52,6 +110,10 @@ str compileGameState(Game g) {
   s += "discard_pile = []\n";
   s += "current_turn_index = 0\n";
   s += "turn_direction = 1\n\n";
+  s += "callout_penalty_draws = <calloutPenaltyDraws>\n";
+  s += "pending_callout_player = None\n";
+  s += "pending_callout_by = None\n";
+  s += "required_declaration = \"<requiredDeclaration>\"\n";
   
   return s;
 }
@@ -223,9 +285,14 @@ str compileEffectItems(Effect eff) {
 }
 
 str compileGameLoop(Game g) {
+  str calloutTriggerExpr = getCalloutTriggerExpr(g);
+  str requiredDeclaration = getRequiredDeclaration(g);
+  str declarationHint = "declare";
+  if (requiredDeclaration != "") declarationHint = requiredDeclaration;
+
   str s = "# --- Game Loop ---\n";
   s += "def run_game():\n";
-  s += "    global discard_pile, deck, players, state_vars, current_turn_index\n";
+  s += "    global discard_pile, deck, players, state_vars, current_turn_index, pending_callout_player, pending_callout_by, required_declaration, callout_penalty_draws\n";
   s += "    setup_game()\n";
   
   // Setup Actions
@@ -262,26 +329,50 @@ str compileGameLoop(Game g) {
   s += "                print(\"Deck empty and no discard to shuffle.\")\n";
   s += "        current_player = players[current_turn_index]\n";
   s += "        top_card = discard_pile[-1]\n";
+  s += "        # Obligation enforcement: next player may call out until they play\n";
   s += "        print(f\"\\n=== {current_player[\'name\']}\'s Turn ===\")\n";
   s += "        print(f\"Top Card: {top_card} (Active Color: {state_vars.get(\'current_color\', \'None\')})\")\n";
   s += "        for idx, c in enumerate(current_player[\'hand\']): print(f\"{idx}: {c.get(\'suit\', \'\') if c.get(\'suit\') != \'wild\' else \'wild\'} {c.get(\'rank\', \'\')} {c.get(\'type\', \'\')}\")\n";
   s += "\n";
-  s += "        cmd = input(\"Action (play \<idx\> / draw): \").split()\n";
+  s += "        cmd = input(\"Action (play \<idx\> [<declarationHint>] / draw / callout / quit): \" ).split()\n";
   s += "        if not cmd: continue\n";
   s += "\n";
   s += "        if cmd[0] == \"play\":\n";
   s += "             try:\n";
   s += "                 idx = int(cmd[1])\n";
+  s += "                 said_required_declaration = len(cmd) \> 2 and required_declaration != \"\" and cmd[2].lower() == required_declaration.lower()\n";
   s += "                 card = current_player[\'hand\'][idx]\n";
   s += "                 if can_play(card, top_card):\n";
+  s += "                      # If this player had the callout opportunity and chooses to play, it expires now\n";
+  s += "                      if pending_callout_player and pending_callout_by == current_player[\"name\"]:\n";
+  s += "                          pending_callout_player = None\n";
+  s += "                          pending_callout_by = None\n";
   s += "                      current_player[\'hand\'].pop(idx)\n";
   s += "                      discard_pile.append(card)\n";
   s += "                      if card.get(\'suit\') != \'wild\': state_vars[\'current_color\'] = card.get(\'suit\')\n";
+  s += "                      if callout_penalty_draws \> 0 and (<calloutTriggerExpr>):\n";
+  s += "                          if said_required_declaration:\n";
+  s += "                              print(current_player[\"name\"] + \" declares \" + required_declaration + \"!\")\n";
+  s += "                              pending_callout_player = None\n";
+  s += "                              pending_callout_by = None\n";
+  s += "                          else:\n";
+  s += "                              late_declaration = input(\"Type \" + required_declaration + \" now to declare (or press Enter): \" ).strip().lower()\n";
+  s += "                              if late_declaration == required_declaration.lower():\n";
+  s += "                                  print(current_player[\"name\"] + \" declares \" + required_declaration + \"!\")\n";
+  s += "                                  pending_callout_player = None\n";
+  s += "                                  pending_callout_by = None\n";
+  s += "                              else:\n";
+  s += "                                  print(current_player[\"name\"] + \" forgot to declare \" + required_declaration + \"!\")\n";
+  s += "                                  pending_callout_player = current_player[\"name\"]\n";
+  s += "                                  pending_callout_by = None\n";
   s += "                      apply_effects(card)\n";
   s += "                      if len(current_player[\'hand\']) == 0: \n                          print(f\"{current_player[\'name\']} Wins!\"); break\n";
   s += "                      advance_turn()\n";
+  s += "                      if pending_callout_player == current_player[\"name\"]:\n";
+  s += "                          pending_callout_by = players[current_turn_index][\"name\"]\n";
   s += "                 else: print(\"Invalid Move!\")\n";
-  s += "             except (IndexError, ValueError):\n                 print(\"Invalid selection\")\n                 # import traceback; traceback.print_exc()\n";
+  s += "             except (IndexError, ValueError):\n";
+  s += "                 print(\"Invalid selection\")\n";
   s += "        elif cmd[0] == \"draw\":\n";
   s += "             if deck:\n";
   s += "                 card = deck.pop()\n";
@@ -292,6 +383,25 @@ str compileGameLoop(Game g) {
   s += "                 advance_turn()\n";
   s += "             else:\n";
   s += "                 print(\"Deck Empty!\")\n";
+  s += "        elif cmd[0] == \"callout\":\n";
+  s += "             if pending_callout_player and callout_penalty_draws \> 0 and pending_callout_by == current_player[\"name\"]:\n";
+  s += "                 target = None\n";
+  s += "                 for p in players:\n";
+  s += "                     if p[\"name\"] == pending_callout_player:\n";
+  s += "                         target = p\n";
+  s += "                         break\n";
+  s += "                 if target is not None:\n";
+  s += "                     drawn = 0\n";
+  s += "                     for _ in range(callout_penalty_draws):\n";
+  s += "                         if not deck:\n";
+  s += "                             break\n";
+  s += "                         target[\"hand\"].append(deck.pop())\n";
+  s += "                         drawn += 1\n";
+  s += "                     print(target[\"name\"] + \" missed declaration and draws \" + str(drawn) + \" card(s).\")\n";
+  s += "                 pending_callout_player = None\n";
+  s += "                 pending_callout_by = None\n";
+  s += "             else:\n";
+  s += "                 print(\"No valid callout available.\")\n";
   s += "        elif cmd[0] == \"quit\": break\n";
   
   s += "\nif __name__ == \"__main__\":\n";
