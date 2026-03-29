@@ -15,7 +15,7 @@ import Set;
  */
 
 void main() {
-    loc exampleLoc = |project://cardgame/examples/example.simple|;
+    loc exampleLoc = |project://Group_12/examples/example.simple|;
     println("Processing: " + exampleLoc.path);
     
     if (!exists(exampleLoc)) {
