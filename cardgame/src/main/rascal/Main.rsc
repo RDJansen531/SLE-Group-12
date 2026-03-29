@@ -15,7 +15,7 @@ import Set;
  */
 
 void main() {
-    loc exampleLoc = |project://cardgame/src/main/rascal/example.uno|;
+    loc exampleLoc = |project://cardgame/src/main/rascal/example.simple|;
     println("Processing: " + exampleLoc.path);
     
     if (!exists(exampleLoc)) {
