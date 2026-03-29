@@ -114,7 +114,25 @@ syntax StateChange
   | startNewRound: "start_new_round";
 
 syntax Rule
-  = rule: "rule" "for" ActionType ":" Condition+ conditions;
+  = rule: "rule" "for" ActionType ":" Condition+ conditions
+  | obligationRule: "rule" "obligation" Id name ":"
+                   "requirement" ":" Condition+ requirements
+                   "must" ":" ObligationMust must
+                   "deadline" ":" ObligationDeadline deadline
+                   "enforcement" ":" ObligationEnforcement enforcement
+                   "on_violation" ":" Effect+ onViolation;
+
+syntax ObligationMust
+  = currentPlayerDeclares: "current_player" "declares" Id declaration;
+
+syntax ObligationDeadline
+  = beforeNextTurn: "before_next_turn";
+
+syntax ObligationEnforcement
+  = calloutByNextPlayer: "callout_by_next_player" ObligationCalloutExpiry expiry;
+
+syntax ObligationCalloutExpiry
+  = beforeNextPlayerPlays: "before_next_player_plays";
 
 syntax ActionType
   = \play: "play"

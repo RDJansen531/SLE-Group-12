@@ -1,6 +1,7 @@
 module Check
 
 import AST;
+import List;
 import Message;
 
 /*
@@ -15,6 +16,7 @@ public set[Message] checkGame(Game g) {
   
   msgs += checkDuplicates(g);
   msgs += checkUndefinedReferences(g);
+  msgs += checkObligationRules(g);
   
   return msgs;
 }
@@ -121,7 +123,7 @@ public set[Message] checkUndefinedReferences(Game g) {
   }
 
   // Check references in Effects
-  visit(g.cardTypes + g.violations + g.endConditions) {
+  visit(g.cardTypes + g.violations + g.endConditions + g.rules) {
     case e:playerAction(specific(name), _):
       if (name notin definedPlayers)
         msgs += {error("Undefined player target in effect: " + name, e.src)};
@@ -131,4 +133,96 @@ public set[Message] checkUndefinedReferences(Game g) {
   }
   
   return msgs;
+}
+
+// Check obligation rule configuration (requirement/must/deadline/on_violation)
+public set[Message] checkObligationRules(Game g) {
+  set[Message] msgs = {};
+
+  list[Rule] obligationRules = [r | r <- g.rules, obligationRule(_, _, _, _, _, _) := r];
+
+  if (size(obligationRules) > 1) {
+    msgs += {error("At most one obligation rule is currently supported by the runtime", obligationRules[1].src)};
+  }
+
+  for (r <- obligationRules) {
+    if (obligationRule(name, requirements, must, deadline, enforcement, onViolation) := r) {
+      if (name == "") {
+        msgs += {error("rule obligation must define a non-empty name/token", r.src)};
+      }
+
+      // Currently supported must-clause: current_player declares <name>
+      if (currentPlayerDeclares(declaredToken) := must) {
+        if (declaredToken != name) {
+          msgs += {error("Obligation name must match must-clause declaration token", must.src)};
+        }
+      }
+
+      // Currently supported deadline: before_next_turn
+      if (!(beforeNextTurn() := deadline)) {
+        msgs += {error("Unsupported obligation deadline (currently supported by runtime: before_next_turn)", deadline.src)};
+      }
+
+      // Currently supported enforcement: callout_by_next_player before_next_player_plays
+      bool hasSupportedEnforcement = false;
+      if (calloutByNextPlayer(expiry) := enforcement) {
+        if (beforeNextPlayerPlays() := expiry) {
+          hasSupportedEnforcement = true;
+        } else {
+          msgs += {error("Unsupported obligation enforcement expiry (currently supported by runtime: before_next_player_plays)", expiry.src)};
+        }
+      }
+
+      if (!hasSupportedEnforcement) {
+        msgs += {error("Unsupported obligation enforcement (currently supported by runtime: callout_by_next_player before_next_player_plays)", enforcement.src)};
+      }
+
+      if (size(g.players) < 2) {
+        msgs += {error("Obligation rule requires at least two players", r.src)};
+      }
+
+      for (c <- requirements) {
+        if (!isSupportedCalloutTrigger(c)) {
+          msgs += {error("Unsupported condition in obligation requirement", c.src)};
+        }
+      }
+
+      bool hasDrawEffect = false;
+      for (e <- onViolation) {
+        switch (e) {
+          case playerAction(current(), draws(n)): {
+            if (n <= 0) {
+              msgs += {error("Obligation on_violation draw effect must be greater than 0", e.src)};
+            } else {
+              hasDrawEffect = true;
+            }
+          }
+          default: {
+            msgs += {error("Unsupported obligation on_violation effect (currently supported by runtime: current_player: draws N)", e.src)};
+          }
+        }
+      }
+
+      if (!hasDrawEffect) {
+        msgs += {error("Obligation rule requires an on_violation current_player: draws N effect", r.src)};
+      }
+    }
+  }
+
+  return msgs;
+}
+
+bool isSupportedCalloutTrigger(Condition c) {
+  switch(c) {
+    case handSizeEq(_): return true;
+    case handSizeLt(_): return true;
+    case handSizeLte(_): return true;
+    case handSizeGt(_): return true;
+    case handSizeGte(_): return true;
+    case and(lhs, rhs): return isSupportedCalloutTrigger(lhs) && isSupportedCalloutTrigger(rhs);
+    case or(lhs, rhs): return isSupportedCalloutTrigger(lhs) && isSupportedCalloutTrigger(rhs);
+    case not(cond): return isSupportedCalloutTrigger(cond);
+    case parens(cond): return isSupportedCalloutTrigger(cond);
+    default: return false;
+  }
 }

@@ -36,10 +36,17 @@ game
   current_color = red
 
 
-  violation uno :
-    hand_size equals 1
-  penalty :
-    current_player: draws 2
+  rule obligation uno :
+    requirement :
+      hand_size equals 1
+    must :
+      current_player declares uno
+    deadline :
+      before_next_turn
+    enforcement :
+      callout_by_next_player before_next_player_plays
+    on_violation :
+      current_player: draws 3
 
 
   rule for play :
@@ -59,7 +66,7 @@ game
 
 
   setup :
-    each_player draws 7
+    each_player draws 2
     discard top_card from deck
 
 

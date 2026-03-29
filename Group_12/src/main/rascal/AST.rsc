@@ -87,7 +87,20 @@ data SetupAction
   | initState(str variable, str val, loc src=|unknown:///|);
 
 data Rule
-  = rule(ActionType actionType, list[Condition] conditions, loc src=|unknown:///|);
+  = rule(ActionType actionType, list[Condition] conditions, loc src=|unknown:///|)
+  | obligationRule(str name, list[Condition] requirements, ObligationMust must, ObligationDeadline deadline, ObligationEnforcement enforcement, list[Effect] onViolation, loc src=|unknown:///|);
+
+data ObligationMust
+  = currentPlayerDeclares(str declaration, loc src=|unknown:///|);
+
+data ObligationDeadline
+  = beforeNextTurn(loc src=|unknown:///|);
+
+data ObligationEnforcement
+  = calloutByNextPlayer(ObligationCalloutExpiry expiry, loc src=|unknown:///|);
+
+data ObligationCalloutExpiry
+  = beforeNextPlayerPlays(loc src=|unknown:///|);
 
 data ActionType
   = play(loc src=|unknown:///|)
